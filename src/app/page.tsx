@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, type FC, type DragEvent } from 'react';
-import { GripVertical, Plus, MoreHorizontal, Trash2 } from 'lucide-react';
+import { GripVertical, Plus, MoreHorizontal, Trash2, RefreshCw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -61,10 +61,15 @@ const initialColumns: Column[] = [
 
 // --- SUB-COMPONENTS ---
 
-const AppHeader: FC<{ onAddTask: (title: string) => Promise<void> }> = ({ onAddTask }) => (
+const AppHeader: FC<{ onAddTask: (title: string) => Promise<void>; onRefresh: () => void; isSyncing: boolean }> = ({ onAddTask, onRefresh, isSyncing }) => (
   <header className="flex items-center justify-between p-4 border-b">
     <h1 className="text-2xl font-bold text-foreground">Banco de Tarefas</h1>
-    <CreateTaskDialog onAddTask={onAddTask} />
+    <div className="flex items-center gap-2">
+      <Button onClick={onRefresh} variant="outline" size="icon" disabled={isSyncing}>
+          <RefreshCw className={cn('h-4 w-4', { 'animate-spin': isSyncing })} />
+      </Button>
+      <CreateTaskDialog onAddTask={onAddTask} />
+    </div>
   </header>
 );
 
@@ -337,9 +342,11 @@ export default function KanbanPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [columns] = useState<Column[]>(initialColumns);
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const { toast } = useToast();
 
   const fetchTasks = async () => {
+    setIsSyncing(true);
     const { data: tasksData, error } = await supabase
       .from('tasks')
       .select('*, subtasks(*)')
@@ -353,14 +360,21 @@ export default function KanbanPage() {
       setTasks(tasksData as Task[]);
     }
     setLoading(false);
+    setIsSyncing(false);
   };
 
   useEffect(() => {
     fetchTasks();
     
     const channel = supabase.channel('realtime-tasks')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, fetchTasks)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'subtasks' }, fetchTasks)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
+          console.log('Change received!', payload);
+          fetchTasks();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'subtasks' }, (payload) => {
+          console.log('Change received!', payload);
+          fetchTasks();
+      })
       .subscribe();
 
     return () => {
@@ -457,15 +471,21 @@ export default function KanbanPage() {
 
   if (loading) {
     return (
-        <div className="flex justify-center items-center h-screen bg-background">
-            <p className="text-foreground">Loading tasks...</p>
+      <div className="flex flex-col h-screen bg-background">
+        <AppHeader onAddTask={handleAddTask} onRefresh={fetchTasks} isSyncing={isSyncing} />
+        <div className="flex justify-center items-center flex-grow">
+            <div className="text-center">
+                <p className="text-foreground mb-4">Loading tasks...</p>
+                <RefreshCw className="h-6 w-6 text-primary animate-spin inline-block"/>
+            </div>
         </div>
+      </div>
     )
   }
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      <AppHeader onAddTask={handleAddTask} />
+      <AppHeader onAddTask={handleAddTask} onRefresh={fetchTasks} isSyncing={isSyncing} />
       <main className="flex-grow p-4 overflow-x-auto">
         <div className="flex flex-col md:flex-row md:space-x-4 min-w-max md:min-w-full h-full">
           {columns.map((column) => (

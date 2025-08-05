@@ -3,7 +3,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: 'Ethereal Kanban',
+  title: 'Banco de Tarefas',
   description: 'A minimalist Kanban board with AI-powered subtask suggestions.',
 };
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, type FC } from 'react';
+import { useState, useEffect, useMemo, type FC, type DragEvent } from 'react';
 import { GripVertical, Plus, MoreHorizontal, Sparkles, Loader2, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -96,7 +96,7 @@ const initialColumns: Column[] = [
 
 const AppHeader: FC<{ onAddTask: (title: string) => void }> = ({ onAddTask }) => (
   <header className="flex items-center justify-between p-4 border-b">
-    <h1 className="text-2xl font-bold text-foreground">Ethereal Kanban</h1>
+    <h1 className="text-2xl font-bold text-foreground">Banco de Tarefas</h1>
     <CreateTaskDialog onAddTask={onAddTask} />
   </header>
 );
@@ -239,8 +239,16 @@ const KanbanTaskCard: FC<{
     return Math.round((completedCount / task.subtasks.length) * 100);
   }, [task.subtasks]);
 
+  const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
+    e.dataTransfer.setData('taskId', task.id);
+  }
+
   return (
-    <Card className="mb-4 bg-card/70 hover:shadow-lg hover:shadow-primary/10 transition-shadow duration-300 border border-transparent hover:border-primary/30">
+    <Card 
+      className="mb-4 bg-card/70 hover:shadow-lg hover:shadow-primary/10 transition-shadow duration-300 border border-transparent hover:border-primary/30 cursor-grab active:cursor-grabbing"
+      draggable
+      onDragStart={handleDragStart}
+    >
         <CardHeader className="p-4 flex flex-row items-start justify-between">
             <div>
                 <CardTitle className="text-base font-semibold">{task.title}</CardTitle>
@@ -251,7 +259,7 @@ const KanbanTaskCard: FC<{
                 )}
             </div>
             <div className="flex items-center">
-                <div className="cursor-grab text-muted-foreground hover:text-foreground transition-colors">
+                <div className="text-muted-foreground hover:text-foreground transition-colors">
                     <GripVertical className="h-5 w-5" />
                 </div>
                 <DropdownMenu>
@@ -335,30 +343,52 @@ const KanbanColumn: FC<{
   onUpdateTask: (taskId: string, updates: Partial<Task>) => void;
   onMoveTask: (taskId: string, newColumnId: ColumnId) => void;
   onDeleteTask: (taskId: string) => void;
-}> = ({ column, tasks, allColumns, onUpdateTask, onMoveTask, onDeleteTask }) => (
-  <div className="w-full md:w-1/3 flex flex-col">
-    <div className="p-4">
-      <h2 className="text-lg font-semibold text-foreground flex items-center">
-        {column.title}
-        <span className="ml-2 text-sm font-normal bg-muted text-muted-foreground rounded-full px-2 py-0.5">
-          {tasks.length}
-        </span>
-      </h2>
-    </div>
-    <div className="flex-grow p-4 pt-0 bg-background rounded-lg min-h-[200px] overflow-y-auto">
-      {tasks.map((task) => (
-        <KanbanTaskCard
-          key={task.id}
-          task={task}
-          columns={allColumns}
-          onUpdateTask={onUpdateTask}
-          onMoveTask={onMoveTask}
-          onDeleteTask={onDeleteTask}
-        />
-      ))}
-    </div>
-  </div>
-);
+  onDropTask: (e: DragEvent<HTMLDivElement>, columnId: ColumnId) => void;
+}> = ({ column, tasks, allColumns, onUpdateTask, onMoveTask, onDeleteTask, onDropTask }) => {
+    const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.currentTarget.classList.add('bg-primary/10');
+    }
+
+    const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+        e.currentTarget.classList.remove('bg-primary/10');
+    }
+    
+    const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+        e.currentTarget.classList.remove('bg-primary/10');
+        onDropTask(e, column.id);
+    }
+    
+    return (
+        <div className="w-full md:w-1/3 flex flex-col">
+            <div className="p-4">
+            <h2 className="text-lg font-semibold text-foreground flex items-center">
+                {column.title}
+                <span className="ml-2 text-sm font-normal bg-muted text-muted-foreground rounded-full px-2 py-0.5">
+                {tasks.length}
+                </span>
+            </h2>
+            </div>
+            <div 
+                className="flex-grow p-4 pt-0 bg-background rounded-lg min-h-[200px] overflow-y-auto transition-colors"
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+            >
+            {tasks.map((task) => (
+                <KanbanTaskCard
+                key={task.id}
+                task={task}
+                columns={allColumns}
+                onUpdateTask={onUpdateTask}
+                onMoveTask={onMoveTask}
+                onDeleteTask={onDeleteTask}
+                />
+            ))}
+            </div>
+        </div>
+    );
+}
 
 // --- MAIN PAGE COMPONENT ---
 export default function KanbanPage() {
@@ -392,6 +422,13 @@ export default function KanbanPage() {
   const handleDeleteTask = (taskId: string) => {
     setTasks(prev => prev.filter(task => task.id !== taskId));
   };
+  
+  const handleDropTask = (e: DragEvent<HTMLDivElement>, columnId: ColumnId) => {
+    const taskId = e.dataTransfer.getData('taskId');
+    if (taskId) {
+        handleMoveTask(taskId, columnId);
+    }
+  }
 
   const tasksByColumn = useMemo(
     () =>
@@ -423,6 +460,7 @@ export default function KanbanPage() {
               onUpdateTask={handleUpdateTask}
               onMoveTask={handleMoveTask}
               onDeleteTask={handleDeleteTask}
+              onDropTask={handleDropTask}
             />
           ))}
         </div>

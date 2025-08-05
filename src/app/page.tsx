@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, type FC, type DragEvent } from 'react';
-import { GripVertical, Plus, MoreHorizontal, Sparkles, Loader2, Trash2 } from 'lucide-react';
+import { GripVertical, Plus, MoreHorizontal, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -25,8 +25,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import { suggestSubtasks } from '@/ai/flows/suggest-subtasks';
 import { cn } from '@/lib/utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
@@ -182,8 +180,6 @@ const KanbanTaskCard: FC<{
   onMoveTask: (taskId: string, newColumnId: ColumnId) => void;
   onDeleteTask: (taskId: string) => void;
 }> = ({ task, columns, onUpdateTask, onMoveTask, onDeleteTask }) => {
-  const { toast } = useToast();
-  const [isGenerating, setIsGenerating] = useState(false);
   const [newSubtaskText, setNewSubtaskText] = useState('');
 
   const handleSubtaskToggle = (subtaskId: string) => {
@@ -198,33 +194,6 @@ const KanbanTaskCard: FC<{
     onUpdateTask(task.id, { subtasks: updatedSubtasks });
   };
 
-
-  const handleAiSuggest = async () => {
-    setIsGenerating(true);
-    try {
-      const result = await suggestSubtasks({ taskTitle: task.title });
-      const newSubtasks = result.subtasks.map((text) => ({
-        id: crypto.randomUUID(),
-        text,
-        completed: false,
-      }));
-      onUpdateTask(task.id, { subtasks: [...task.subtasks, ...newSubtasks] });
-      toast({
-        title: 'Subtasks suggested by AI',
-        description: `${newSubtasks.length} new subtasks have been added.`,
-      });
-    } catch (e) {
-      console.error(e);
-      toast({
-        variant: 'destructive',
-        title: 'AI Suggestion Failed',
-        description: 'Could not generate subtasks. Please try again.',
-      });
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-  
   const handleAddSubtask = () => {
     if (newSubtaskText.trim()) {
         const newSubtask = { id: crypto.randomUUID(), text: newSubtaskText.trim(), completed: false };
@@ -321,14 +290,6 @@ const KanbanTaskCard: FC<{
                 />
                 <Button variant="secondary" onClick={handleAddSubtask} className="h-9">Add</Button>
             </div>
-            <Button variant="outline" size="sm" onClick={handleAiSuggest} disabled={isGenerating} className="w-full">
-                {isGenerating ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                    <Sparkles className="mr-2 h-4 w-4 text-primary/70" />
-                )}
-                Suggest Subtasks with AI
-            </Button>
         </div>
       </CardContent>
     </Card>

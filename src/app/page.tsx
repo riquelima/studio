@@ -27,6 +27,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { supabase } from '@/lib/supabase';
+import { useToast } from '@/hooks/use-toast';
+
 
 // --- TYPES ---
 type ColumnId = 'todo' | 'in-progress' | 'done';
@@ -35,12 +38,13 @@ type Subtask = {
   id: string;
   text: string;
   completed: boolean;
+  task_id: string;
 };
 
 type Task = {
   id: string;
   title: string;
-  columnId: ColumnId;
+  column_id: ColumnId;
   subtasks: Subtask[];
 };
 
@@ -48,41 +52,6 @@ type Column = {
   id: ColumnId;
   title: string;
 };
-
-// --- INITIAL DATA ---
-const initialTasks: Task[] = [
-  {
-    id: 'task-1',
-    title: 'Design the landing page',
-    columnId: 'todo',
-    subtasks: [
-      { id: 'sub-1-1', text: 'Create wireframes', completed: true },
-      { id: 'sub-1-2', text: 'Design mockups in Figma', completed: false },
-    ],
-  },
-  {
-    id: 'task-2',
-    title: 'Develop the authentication flow',
-    columnId: 'in-progress',
-    subtasks: [
-        { id: 'sub-2-1', text: 'Set up Firebase Auth', completed: true },
-        { id: 'sub-2-2', text: 'Create login page UI', completed: true },
-        { id: 'sub-2-3', text: 'Create registration page UI', completed: false },
-    ],
-  },
-  {
-    id: 'task-3',
-    title: 'Deploy the backend service',
-    columnId: 'done',
-    subtasks: [{ id: 'sub-3-1', text: 'Configure Vercel environment', completed: true }],
-  },
-  {
-    id: 'task-4',
-    title: 'Write documentation for the API',
-    columnId: 'todo',
-    subtasks: [],
-  },
-];
 
 const initialColumns: Column[] = [
   { id: 'todo', title: '📋 A fazer' },
@@ -92,21 +61,24 @@ const initialColumns: Column[] = [
 
 // --- SUB-COMPONENTS ---
 
-const AppHeader: FC<{ onAddTask: (title: string) => void }> = ({ onAddTask }) => (
+const AppHeader: FC<{ onAddTask: (title: string) => Promise<void> }> = ({ onAddTask }) => (
   <header className="flex items-center justify-between p-4 border-b">
     <h1 className="text-2xl font-bold text-foreground">Banco de Tarefas</h1>
     <CreateTaskDialog onAddTask={onAddTask} />
   </header>
 );
 
-const CreateTaskDialog: FC<{ onAddTask: (title: string) => void }> = ({ onAddTask }) => {
+const CreateTaskDialog: FC<{ onAddTask: (title: string) => Promise<void> }> = ({ onAddTask }) => {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = () => {
-    if (title.trim()) {
-      onAddTask(title.trim());
+  const handleSubmit = async () => {
+    if (title.trim() && !loading) {
+      setLoading(true);
+      await onAddTask(title.trim());
       setTitle('');
+      setLoading(false);
       setOpen(false);
     }
   };
@@ -137,11 +109,14 @@ const CreateTaskDialog: FC<{ onAddTask: (title: string) => void }> = ({ onAddTas
               onChange={(e) => setTitle(e.target.value)}
               className="col-span-3"
               onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+              disabled={loading}
             />
           </div>
         </div>
         <DialogFooter>
-          <Button onClick={handleSubmit}>Create Task</Button>
+          <Button onClick={handleSubmit} disabled={loading}>
+            {loading ? 'Creating...' : 'Create Task'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -177,30 +152,32 @@ const KanbanTaskCard: FC<{
   task: Task;
   columns: Column[];
   onUpdateTask: (taskId: string, updates: Partial<Task>) => void;
-  onMoveTask: (taskId: string, newColumnId: ColumnId) => void;
   onDeleteTask: (taskId: string) => void;
-}> = ({ task, columns, onUpdateTask, onMoveTask, onDeleteTask }) => {
+  onAddSubtask: (taskId: string, text: string) => void;
+  onUpdateSubtask: (subtaskId: string, updates: Partial<Subtask>) => void;
+  onDeleteSubtask: (subtaskId: string) => void;
+}> = ({ task, columns, onUpdateTask, onDeleteTask, onAddSubtask, onUpdateSubtask, onDeleteSubtask }) => {
   const [newSubtaskText, setNewSubtaskText] = useState('');
 
-  const handleSubtaskToggle = (subtaskId: string) => {
-    const updatedSubtasks = task.subtasks.map((sub) =>
-      sub.id === subtaskId ? { ...sub, completed: !sub.completed } : sub
-    );
-    onUpdateTask(task.id, { subtasks: updatedSubtasks });
+  const handleSubtaskToggle = (subtaskId: string, completed: boolean) => {
+    onUpdateSubtask(subtaskId, { completed: !completed });
   };
   
   const handleSubtaskDelete = (subtaskId: string) => {
-    const updatedSubtasks = task.subtasks.filter((sub) => sub.id !== subtaskId);
-    onUpdateTask(task.id, { subtasks: updatedSubtasks });
+    onDeleteSubtask(subtaskId);
   };
 
   const handleAddSubtask = () => {
     if (newSubtaskText.trim()) {
-        const newSubtask = { id: crypto.randomUUID(), text: newSubtaskText.trim(), completed: false };
-        onUpdateTask(task.id, { subtasks: [...task.subtasks, newSubtask] });
+        onAddSubtask(task.id, newSubtaskText.trim());
         setNewSubtaskText('');
     }
   };
+  
+  const handleMoveTask = (newColumnId: ColumnId) => {
+    onUpdateTask(task.id, { column_id: newColumnId });
+  };
+
 
   const completionPercentage = useMemo(() => {
     if (task.subtasks.length === 0) return 0;
@@ -241,9 +218,9 @@ const KanbanTaskCard: FC<{
                         <DropdownMenuLabel>Actions</DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         {columns
-                            .filter((col) => col.id !== task.columnId)
+                            .filter((col) => col.id !== task.column_id)
                             .map((col) => (
-                            <DropdownMenuItem key={col.id} onClick={() => onMoveTask(task.id, col.id)}>
+                            <DropdownMenuItem key={col.id} onClick={() => handleMoveTask(col.id)}>
                                 Move to "{col.title}"
                             </DropdownMenuItem>
                             ))}
@@ -271,7 +248,7 @@ const KanbanTaskCard: FC<{
                     <SubtaskItem
                     key={subtask.id}
                     subtask={subtask}
-                    onToggle={() => handleSubtaskToggle(subtask.id)}
+                    onToggle={() => handleSubtaskToggle(subtask.id, subtask.completed)}
                     onDelete={() => handleSubtaskDelete(subtask.id)}
                     />
                 ))}
@@ -302,10 +279,12 @@ const KanbanColumn: FC<{
   tasks: Task[];
   allColumns: Column[];
   onUpdateTask: (taskId: string, updates: Partial<Task>) => void;
-  onMoveTask: (taskId: string, newColumnId: ColumnId) => void;
   onDeleteTask: (taskId: string) => void;
+  onAddSubtask: (taskId: string, text: string) => void;
+  onUpdateSubtask: (subtaskId: string, updates: Partial<Subtask>) => void;
+  onDeleteSubtask: (subtaskId: string) => void;
   onDropTask: (e: DragEvent<HTMLDivElement>, columnId: ColumnId) => void;
-}> = ({ column, tasks, allColumns, onUpdateTask, onMoveTask, onDeleteTask, onDropTask }) => {
+}> = ({ column, tasks, allColumns, onUpdateTask, onDeleteTask, onAddSubtask, onUpdateSubtask, onDeleteSubtask, onDropTask }) => {
     const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
         e.preventDefault();
         e.currentTarget.classList.add('bg-primary/10');
@@ -338,12 +317,14 @@ const KanbanColumn: FC<{
             >
             {tasks.map((task) => (
                 <KanbanTaskCard
-                key={task.id}
-                task={task}
-                columns={allColumns}
-                onUpdateTask={onUpdateTask}
-                onMoveTask={onMoveTask}
-                onDeleteTask={onDeleteTask}
+                    key={task.id}
+                    task={task}
+                    columns={allColumns}
+                    onUpdateTask={onUpdateTask}
+                    onDeleteTask={onDeleteTask}
+                    onAddSubtask={onAddSubtask}
+                    onUpdateSubtask={onUpdateSubtask}
+                    onDeleteSubtask={onDeleteSubtask}
                 />
             ))}
             </div>
@@ -355,64 +336,131 @@ const KanbanColumn: FC<{
 export default function KanbanPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [columns] = useState<Column[]>(initialColumns);
-  const [isClient, setIsClient] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  const fetchTasks = async () => {
+    const { data: tasksData, error } = await supabase
+      .from('tasks')
+      .select('*, subtasks(*)')
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching tasks:', error);
+      toast({ title: 'Error', description: 'Failed to load tasks.', variant: 'destructive' });
+      setTasks([]);
+    } else {
+      setTasks(tasksData as Task[]);
+    }
+    setLoading(false);
+  };
 
   useEffect(() => {
-    setIsClient(true);
-    const savedTasks = localStorage.getItem('kanban-tasks');
-    setTasks(savedTasks ? JSON.parse(savedTasks) : initialTasks);
+    fetchTasks();
+    
+    const channel = supabase.channel('realtime-tasks')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, fetchTasks)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'subtasks' }, fetchTasks)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    }
   }, []);
 
-  useEffect(() => {
-    if (isClient) {
-        localStorage.setItem('kanban-tasks', JSON.stringify(tasks));
+  const handleAddTask = async (title: string) => {
+    const { data, error } = await supabase
+      .from('tasks')
+      .insert({ title, column_id: 'todo' })
+      .select()
+      .single();
+      
+    if (error) {
+      console.error('Error adding task:', error);
+      toast({ title: 'Error', description: 'Failed to add task.', variant: 'destructive' });
     }
-  }, [tasks, isClient]);
-
-
-  const handleAddTask = (title: string) => {
-    const newTask: Task = {
-      id: crypto.randomUUID(),
-      title,
-      columnId: 'todo',
-      subtasks: [],
-    };
-    setTasks((prev) => [...prev, newTask]);
   };
 
-  const handleUpdateTask = (taskId: string, updates: Partial<Task>) => {
-    setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, ...updates } : task)));
-  };
-
-  const handleMoveTask = (taskId: string, newColumnId: ColumnId) => {
-    setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, columnId: newColumnId } : task)));
+  const handleUpdateTask = async (taskId: string, updates: Partial<Task>) => {
+    const { error } = await supabase
+      .from('tasks')
+      .update(updates)
+      .eq('id', taskId);
+      
+    if (error) {
+      console.error('Error updating task:', error);
+      toast({ title: 'Error', description: 'Failed to update task.', variant: 'destructive' });
+    }
   };
   
-  const handleDeleteTask = (taskId: string) => {
-    setTasks(prev => prev.filter(task => task.id !== taskId));
+  const handleDeleteTask = async (taskId: string) => {
+     const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+     if (error) {
+      console.error('Error deleting task:', error);
+      toast({ title: 'Error', description: 'Failed to delete task.', variant: 'destructive' });
+    }
   };
   
   const handleDropTask = (e: DragEvent<HTMLDivElement>, columnId: ColumnId) => {
     const taskId = e.dataTransfer.getData('taskId');
     if (taskId) {
-        handleMoveTask(taskId, columnId);
+        handleUpdateTask(taskId, { column_id: columnId });
+    }
+  }
+  
+  const handleAddSubtask = async (taskId: string, text: string) => {
+    const { error } = await supabase
+      .from('subtasks')
+      .insert({ task_id: taskId, text, completed: false });
+
+    if (error) {
+        console.error('Error adding subtask:', error);
+        toast({ title: 'Error', description: 'Failed to add subtask.', variant: 'destructive' });
+    }
+  }
+
+  const handleUpdateSubtask = async (subtaskId: string, updates: Partial<Subtask>) => {
+    const { error } = await supabase
+        .from('subtasks')
+        .update(updates)
+        .eq('id', subtaskId);
+
+    if (error) {
+        console.error('Error updating subtask:', error);
+        toast({ title: 'Error', description: 'Failed to update subtask.', variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteSubtask = async (subtaskId: string) => {
+    const { error } = await supabase
+        .from('subtasks')
+        .delete()
+        .eq('id', subtaskId);
+
+    if (error) {
+        console.error('Error deleting subtask:', error);
+        toast({ title: 'Error', description: 'Failed to delete subtask.', variant: 'destructive' });
     }
   }
 
   const tasksByColumn = useMemo(
     () =>
       tasks.reduce((acc, task) => {
-        if (!acc[task.columnId]) {
-          acc[task.columnId] = [];
+        if (!acc[task.column_id]) {
+          acc[task.column_id] = [];
         }
-        acc[task.columnId].push(task);
+        acc[task.column_id].push(task);
         return acc;
       }, {} as Record<ColumnId, Task[]>),
     [tasks]
   );
 
-  if (!isClient) {
-    return null;
+  if (loading) {
+    return (
+        <div className="flex justify-center items-center h-screen bg-background">
+            <p className="text-foreground">Loading tasks...</p>
+        </div>
+    )
   }
 
   return (
@@ -427,8 +475,10 @@ export default function KanbanPage() {
               tasks={tasksByColumn[column.id] || []}
               allColumns={columns}
               onUpdateTask={handleUpdateTask}
-              onMoveTask={handleMoveTask}
               onDeleteTask={handleDeleteTask}
+              onAddSubtask={handleAddSubtask}
+              onUpdateSubtask={handleUpdateSubtask}
+              onDeleteSubtask={handleDeleteSubtask}
               onDropTask={handleDropTask}
             />
           ))}

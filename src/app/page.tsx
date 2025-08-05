@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, type FC, type DragEvent } from 'react';
+import { useState, useEffect, useMemo, type FC, type DragEvent, useRef } from 'react';
 import { GripVertical, Plus, MoreHorizontal, Trash2, RefreshCw, Pencil, Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -134,24 +134,57 @@ const SubtaskItem: FC<{
     subtask: Subtask;
     onToggle: () => void;
     onDelete: () => void;
-}> = ({ subtask, onToggle, onDelete }) => (
-    <div className="flex items-center justify-between p-2 rounded-md hover:bg-white/5 transition-colors">
-        <div className="flex items-center gap-3">
-            <Checkbox id={subtask.id} checked={subtask.completed} onCheckedChange={onToggle} />
-            <label
-                htmlFor={subtask.id}
-                className={cn('text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70', {
-                    'line-through text-muted-foreground': subtask.completed,
-                })}
-            >
-                {subtask.text}
-            </label>
+    onUpdateText: (newText: string) => void;
+}> = ({ subtask, onToggle, onDelete, onUpdateText }) => {
+    const [isEditing, setIsEditing] = useState(false);
+    const [text, setText] = useState(subtask.text);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (isEditing) {
+            inputRef.current?.focus();
+            inputRef.current?.select();
+        }
+    }, [isEditing]);
+    
+    const handleUpdate = () => {
+        if(text.trim() && text.trim() !== subtask.text) {
+            onUpdateText(text.trim());
+        }
+        setIsEditing(false);
+    }
+
+    return (
+        <div className="flex items-center justify-between p-2 rounded-md hover:bg-white/5 transition-colors">
+            <div className="flex items-center gap-3 flex-grow">
+                <Checkbox id={subtask.id} checked={subtask.completed} onCheckedChange={onToggle} />
+                {isEditing ? (
+                    <Input 
+                        ref={inputRef}
+                        value={text}
+                        onChange={e => setText(e.target.value)}
+                        onBlur={handleUpdate}
+                        onKeyDown={e => e.key === 'Enter' && handleUpdate()}
+                        className="h-8 text-sm"
+                    />
+                ) : (
+                    <label
+                        htmlFor={subtask.id}
+                        onDoubleClick={() => setIsEditing(true)}
+                        className={cn('text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 w-full', {
+                            'line-through text-muted-foreground': subtask.completed,
+                        })}
+                    >
+                        {subtask.text}
+                    </label>
+                )}
+            </div>
+            <Button variant="ghost" size="icon" className="h-7 w-7 opacity-50 hover:opacity-100 flex-shrink-0" onClick={onDelete}>
+                <Trash2 className="h-4 w-4"/>
+            </Button>
         </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-50 hover:opacity-100" onClick={onDelete}>
-            <Trash2 className="h-4 w-4"/>
-        </Button>
-    </div>
-);
+    );
+};
 
 const EditTaskDialog: FC<{ task: Task; onUpdateTask: (taskId: string, updates: Partial<Task>) => void; }> = ({ task, onUpdateTask }) => {
     const [open, setOpen] = useState(false);
@@ -216,11 +249,25 @@ const KanbanTaskCard: FC<{
   onAddSubtask: (taskId: string, text: string) => void;
   onUpdateSubtask: (subtaskId: string, updates: Partial<Subtask>) => void;
   onDeleteSubtask: (subtaskId: string) => void;
-  onAddSubtasks: (taskId: string, subtasks: string[]) => void;
-}> = ({ task, columns, onUpdateTask, onDeleteTask, onAddSubtask, onUpdateSubtask, onDeleteSubtask, onAddSubtasks }) => {
+}> = ({ task, columns, onUpdateTask, onDeleteTask, onAddSubtask, onUpdateSubtask, onDeleteSubtask }) => {
   const [newSubtaskText, setNewSubtaskText] = useState('');
-  const [isSuggesting, setIsSuggesting] = useState(false);
-  const { toast } = useToast();
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [title, setTitle] = useState(task.title);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditingTitle) {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    }
+  }, [isEditingTitle]);
+
+  const handleTitleUpdate = () => {
+    if (title.trim() && title.trim() !== task.title) {
+        onUpdateTask(task.id, { title: title.trim() });
+    }
+    setIsEditingTitle(false);
+  }
 
   const handleSubtaskToggle = (subtaskId: string, completed: boolean) => {
     onUpdateSubtask(subtaskId, { completed: !completed });
@@ -230,35 +277,20 @@ const KanbanTaskCard: FC<{
     onDeleteSubtask(subtaskId);
   };
 
+  const handleSubtaskUpdateText = (subtaskId: string, newText: string) => {
+      onUpdateSubtask(subtaskId, { text: newText });
+  }
+
   const handleAddSubtask = () => {
     if (newSubtaskText.trim()) {
         onAddSubtask(task.id, newSubtaskText.trim());
         setNewSubtaskText('');
     }
   };
-
-  const handleSuggestSubtasks = async () => {
-    setIsSuggesting(true);
-    try {
-        const result = await suggestSubtasks({ taskTitle: task.title });
-        if(result.subtasks && result.subtasks.length > 0) {
-            onAddSubtasks(task.id, result.subtasks);
-            toast({ title: 'Sucesso', description: `${result.subtasks.length} subtarefas foram adicionadas.` });
-        } else {
-            toast({ title: 'Hmm...', description: 'A IA não sugeriu nenhuma subtarefa.' });
-        }
-    } catch(e) {
-        console.error("Error suggesting subtasks", e);
-        toast({ title: 'Erro', description: 'Não foi possível sugerir subtarefas.', variant: 'destructive' });
-    } finally {
-        setIsSuggesting(false);
-    }
-  }
   
   const handleMoveTask = (newColumnId: ColumnId) => {
     onUpdateTask(task.id, { column_id: newColumnId });
   };
-
 
   const completionPercentage = useMemo(() => {
     if (task.subtasks.length === 0) return 0;
@@ -272,21 +304,34 @@ const KanbanTaskCard: FC<{
 
   return (
     <Card 
-      className="mb-4 bg-card/70 hover:shadow-lg hover:shadow-primary/10 transition-shadow duration-300 border border-transparent hover:border-primary/30 cursor-grab active:cursor-grabbing"
+      className="mb-4 bg-card/70 hover:shadow-lg hover:shadow-primary/10 transition-shadow duration-300 border border-transparent hover:border-primary/30"
       draggable
       onDragStart={handleDragStart}
     >
         <CardHeader className="p-4 flex flex-row items-start justify-between">
-            <div>
-                <CardTitle className="text-base font-semibold">{task.title}</CardTitle>
-                {task.subtasks.length > 0 && (
-                     <CardDescription className="text-xs mt-1">
-                        {task.subtasks.filter(s => s.completed).length} de {task.subtasks.length} concluídas
-                    </CardDescription>
+            <div className="flex-grow" onDoubleClick={() => setIsEditingTitle(true)}>
+                {isEditingTitle ? (
+                    <Input
+                        ref={titleInputRef}
+                        value={title}
+                        onChange={e => setTitle(e.target.value)}
+                        onBlur={handleTitleUpdate}
+                        onKeyDown={e => e.key === 'Enter' && handleTitleUpdate()}
+                        className="text-base font-semibold h-9"
+                    />
+                ) : (
+                    <>
+                        <CardTitle className="text-base font-semibold cursor-pointer">{task.title}</CardTitle>
+                        {task.subtasks.length > 0 && (
+                             <CardDescription className="text-xs mt-1">
+                                {task.subtasks.filter(s => s.completed).length} de {task.subtasks.length} concluídas
+                            </CardDescription>
+                        )}
+                    </>
                 )}
             </div>
-            <div className="flex items-center">
-                <div className="text-muted-foreground hover:text-foreground transition-colors">
+            <div className="flex items-center ml-2">
+                <div className="text-muted-foreground hover:text-foreground transition-colors cursor-grab active:cursor-grabbing">
                     <GripVertical className="h-5 w-5" />
                 </div>
                 <DropdownMenu>
@@ -322,7 +367,8 @@ const KanbanTaskCard: FC<{
                 <div 
                   className={cn("h-1.5 rounded-full transition-all duration-500", {
                     "bg-green-500": completionPercentage === 100,
-                    "bg-yellow-500": completionPercentage < 100
+                    "bg-yellow-500": completionPercentage > 0 && completionPercentage < 100,
+                    "bg-transparent": completionPercentage === 0,
                   })} 
                   style={{ width: `${completionPercentage}%` }} 
                 />
@@ -336,10 +382,11 @@ const KanbanTaskCard: FC<{
                 <div className="space-y-1">
                 {task.subtasks.map((subtask) => (
                     <SubtaskItem
-                    key={subtask.id}
-                    subtask={subtask}
-                    onToggle={() => handleSubtaskToggle(subtask.id, subtask.completed)}
-                    onDelete={() => handleSubtaskDelete(subtask.id)}
+                        key={subtask.id}
+                        subtask={subtask}
+                        onToggle={() => handleSubtaskToggle(subtask.id, subtask.completed)}
+                        onDelete={() => handleSubtaskDelete(subtask.id)}
+                        onUpdateText={(newText) => handleSubtaskUpdateText(subtask.id, newText)}
                     />
                 ))}
                 </div>
@@ -373,9 +420,8 @@ const KanbanColumn: FC<{
   onAddSubtask: (taskId: string, text: string) => void;
   onUpdateSubtask: (subtaskId: string, updates: Partial<Subtask>) => void;
   onDeleteSubtask: (subtaskId: string) => void;
-  onAddSubtasks: (taskId: string, subtasks: string[]) => void;
   onDropTask: (e: DragEvent<HTMLDivElement>, columnId: ColumnId) => void;
-}> = ({ column, tasks, allColumns, onUpdateTask, onDeleteTask, onAddSubtask, onUpdateSubtask, onDeleteSubtask, onAddSubtasks, onDropTask }) => {
+}> = ({ column, tasks, allColumns, onUpdateTask, onDeleteTask, onAddSubtask, onUpdateSubtask, onDeleteSubtask, onDropTask }) => {
     const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
         e.preventDefault();
         e.currentTarget.classList.add('bg-primary/10');
@@ -416,7 +462,6 @@ const KanbanColumn: FC<{
                     onAddSubtask={onAddSubtask}
                     onUpdateSubtask={onUpdateSubtask}
                     onDeleteSubtask={onDeleteSubtask}
-                    onAddSubtasks={onAddSubtasks}
                 />
             ))}
             </div>
@@ -455,11 +500,11 @@ export default function KanbanPage() {
     
     const channel = supabase.channel('realtime-tasks')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
-          console.log('Change received!', payload);
+          console.log('Task change received!', payload);
           fetchTasks();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'subtasks' }, (payload) => {
-          console.log('Change received!', payload);
+          console.log('Subtask change received!', payload);
           fetchTasks();
       })
       .subscribe();
@@ -467,7 +512,7 @@ export default function KanbanPage() {
     return () => {
       supabase.removeChannel(channel);
     }
-  }, []);
+  }, [toast]);
 
   const handleAddTask = async (title: string) => {
     const { data, error } = await supabase
@@ -517,23 +562,6 @@ export default function KanbanPage() {
     if (error) {
         console.error('Error adding subtask:', error);
         toast({ title: 'Error', description: 'Failed to add subtask.', variant: 'destructive' });
-    }
-  }
-
-  const handleAddSubtasks = async (taskId: string, subtaskTexts: string[]) => {
-    const subtasksToInsert = subtaskTexts.map(text => ({
-        task_id: taskId,
-        text,
-        completed: false
-    }));
-    
-    const { error } = await supabase
-      .from('subtasks')
-      .insert(subtasksToInsert);
-
-    if (error) {
-        console.error('Error adding subtasks:', error);
-        toast({ title: 'Error', description: 'Failed to add subtasks.', variant: 'destructive' });
     }
   }
 
@@ -603,7 +631,6 @@ export default function KanbanPage() {
               onAddSubtask={handleAddSubtask}
               onUpdateSubtask={handleUpdateSubtask}
               onDeleteSubtask={handleDeleteSubtask}
-              onAddSubtasks={handleAddSubtasks}
               onDropTask={handleDropTask}
             />
           ))}
@@ -612,3 +639,5 @@ export default function KanbanPage() {
     </div>
   );
 }
+
+    

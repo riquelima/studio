@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, type FC, type DragEvent } from 'react';
-import { GripVertical, Plus, MoreHorizontal, Trash2, RefreshCw, Pencil } from 'lucide-react';
+import { GripVertical, Plus, MoreHorizontal, Trash2, RefreshCw, Pencil, Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
+import { suggestSubtasks } from '@/ai/flows/suggest-subtasks';
 
 
 // --- TYPES ---
@@ -215,8 +216,11 @@ const KanbanTaskCard: FC<{
   onAddSubtask: (taskId: string, text: string) => void;
   onUpdateSubtask: (subtaskId: string, updates: Partial<Subtask>) => void;
   onDeleteSubtask: (subtaskId: string) => void;
-}> = ({ task, columns, onUpdateTask, onDeleteTask, onAddSubtask, onUpdateSubtask, onDeleteSubtask }) => {
+  onAddSubtasks: (taskId: string, subtasks: string[]) => void;
+}> = ({ task, columns, onUpdateTask, onDeleteTask, onAddSubtask, onUpdateSubtask, onDeleteSubtask, onAddSubtasks }) => {
   const [newSubtaskText, setNewSubtaskText] = useState('');
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const { toast } = useToast();
 
   const handleSubtaskToggle = (subtaskId: string, completed: boolean) => {
     onUpdateSubtask(subtaskId, { completed: !completed });
@@ -232,6 +236,24 @@ const KanbanTaskCard: FC<{
         setNewSubtaskText('');
     }
   };
+
+  const handleSuggestSubtasks = async () => {
+    setIsSuggesting(true);
+    try {
+        const result = await suggestSubtasks({ taskTitle: task.title });
+        if(result.subtasks && result.subtasks.length > 0) {
+            onAddSubtasks(task.id, result.subtasks);
+            toast({ title: 'Sucesso', description: `${result.subtasks.length} subtarefas foram adicionadas.` });
+        } else {
+            toast({ title: 'Hmm...', description: 'A IA não sugeriu nenhuma subtarefa.' });
+        }
+    } catch(e) {
+        console.error("Error suggesting subtasks", e);
+        toast({ title: 'Erro', description: 'Não foi possível sugerir subtarefas.', variant: 'destructive' });
+    } finally {
+        setIsSuggesting(false);
+    }
+  }
   
   const handleMoveTask = (newColumnId: ColumnId) => {
     onUpdateTask(task.id, { column_id: newColumnId });
@@ -297,7 +319,13 @@ const KanbanTaskCard: FC<{
       <CardContent className="p-4 pt-0">
         {task.subtasks.length > 0 && (
             <div className="w-full bg-muted rounded-full h-1.5 mb-4 overflow-hidden">
-                <div className="bg-primary h-1.5 rounded-full transition-all duration-500" style={{ width: `${completionPercentage}%` }} />
+                <div 
+                  className={cn("h-1.5 rounded-full transition-all duration-500", {
+                    "bg-green-500": completionPercentage === 100,
+                    "bg-yellow-500": completionPercentage < 100
+                  })} 
+                  style={{ width: `${completionPercentage}%` }} 
+                />
             </div>
         )}
         <Collapsible>
@@ -345,8 +373,9 @@ const KanbanColumn: FC<{
   onAddSubtask: (taskId: string, text: string) => void;
   onUpdateSubtask: (subtaskId: string, updates: Partial<Subtask>) => void;
   onDeleteSubtask: (subtaskId: string) => void;
+  onAddSubtasks: (taskId: string, subtasks: string[]) => void;
   onDropTask: (e: DragEvent<HTMLDivElement>, columnId: ColumnId) => void;
-}> = ({ column, tasks, allColumns, onUpdateTask, onDeleteTask, onAddSubtask, onUpdateSubtask, onDeleteSubtask, onDropTask }) => {
+}> = ({ column, tasks, allColumns, onUpdateTask, onDeleteTask, onAddSubtask, onUpdateSubtask, onDeleteSubtask, onAddSubtasks, onDropTask }) => {
     const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
         e.preventDefault();
         e.currentTarget.classList.add('bg-primary/10');
@@ -387,6 +416,7 @@ const KanbanColumn: FC<{
                     onAddSubtask={onAddSubtask}
                     onUpdateSubtask={onUpdateSubtask}
                     onDeleteSubtask={onDeleteSubtask}
+                    onAddSubtasks={onAddSubtasks}
                 />
             ))}
             </div>
@@ -490,6 +520,23 @@ export default function KanbanPage() {
     }
   }
 
+  const handleAddSubtasks = async (taskId: string, subtaskTexts: string[]) => {
+    const subtasksToInsert = subtaskTexts.map(text => ({
+        task_id: taskId,
+        text,
+        completed: false
+    }));
+    
+    const { error } = await supabase
+      .from('subtasks')
+      .insert(subtasksToInsert);
+
+    if (error) {
+        console.error('Error adding subtasks:', error);
+        toast({ title: 'Error', description: 'Failed to add subtasks.', variant: 'destructive' });
+    }
+  }
+
   const handleUpdateSubtask = async (subtaskId: string, updates: Partial<Subtask>) => {
     const { error } = await supabase
         .from('subtasks')
@@ -556,6 +603,7 @@ export default function KanbanPage() {
               onAddSubtask={handleAddSubtask}
               onUpdateSubtask={handleUpdateSubtask}
               onDeleteSubtask={handleDeleteSubtask}
+              onAddSubtasks={handleAddSubtasks}
               onDropTask={handleDropTask}
             />
           ))}

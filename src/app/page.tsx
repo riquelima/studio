@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, type FC, type DragEvent } from 'react';
-import { GripVertical, Plus, MoreHorizontal, Trash2, RefreshCw } from 'lucide-react';
+import { GripVertical, Plus, MoreHorizontal, Trash2, RefreshCw, Pencil } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -93,20 +93,20 @@ const CreateTaskDialog: FC<{ onAddTask: (title: string) => Promise<void> }> = ({
       <DialogTrigger asChild>
         <Button>
           <Plus className="mr-2 h-4 w-4" />
-          New Task
+          Nova Tarefa
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Create New Task</DialogTitle>
+          <DialogTitle>Criar Nova Tarefa</DialogTitle>
           <DialogDescription>
-            Enter a title for your new task. You can add subtasks later.
+            Digite um título para sua nova tarefa. Você poderá adicionar subtarefas depois.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="title" className="text-right">
-              Title
+              Título
             </Label>
             <Input
               id="title"
@@ -120,7 +120,7 @@ const CreateTaskDialog: FC<{ onAddTask: (title: string) => Promise<void> }> = ({
         </div>
         <DialogFooter>
           <Button onClick={handleSubmit} disabled={loading}>
-            {loading ? 'Creating...' : 'Create Task'}
+            {loading ? 'Criando...' : 'Criar Tarefa'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -151,6 +151,60 @@ const SubtaskItem: FC<{
         </Button>
     </div>
 );
+
+const EditTaskDialog: FC<{ task: Task; onUpdateTask: (taskId: string, updates: Partial<Task>) => void; }> = ({ task, onUpdateTask }) => {
+    const [open, setOpen] = useState(false);
+    const [title, setTitle] = useState(task.title);
+    const [loading, setLoading] = useState(false);
+
+    const handleSubmit = async () => {
+        if (title.trim() && !loading) {
+            setLoading(true);
+            await onUpdateTask(task.id, { title: title.trim() });
+            setLoading(false);
+            setOpen(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Editar Tarefa
+                </DropdownMenuItem>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                    <DialogTitle>Editar Tarefa</DialogTitle>
+                    <DialogDescription>
+                       Altere o título da sua tarefa.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                    <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="title" className="text-right">
+                            Título
+                        </Label>
+                        <Input
+                            id="title"
+                            value={title}
+                            onChange={(e) => setTitle(e.target.value)}
+                            className="col-span-3"
+                            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+                            disabled={loading}
+                        />
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button onClick={handleSubmit} disabled={loading}>
+                        {loading ? 'Salvando...' : 'Salvar Alterações'}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+};
 
 
 const KanbanTaskCard: FC<{
@@ -205,7 +259,7 @@ const KanbanTaskCard: FC<{
                 <CardTitle className="text-base font-semibold">{task.title}</CardTitle>
                 {task.subtasks.length > 0 && (
                      <CardDescription className="text-xs mt-1">
-                        {task.subtasks.filter(s => s.completed).length} of {task.subtasks.length} completed
+                        {task.subtasks.filter(s => s.completed).length} de {task.subtasks.length} concluídas
                     </CardDescription>
                 )}
             </div>
@@ -220,18 +274,21 @@ const KanbanTaskCard: FC<{
                     </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuLabel>Ações</DropdownMenuLabel>
                         <DropdownMenuSeparator />
+                        <EditTaskDialog task={task} onUpdateTask={onUpdateTask} />
+                        <DropdownMenuLabel>Mover para</DropdownMenuLabel>
                         {columns
                             .filter((col) => col.id !== task.column_id)
                             .map((col) => (
                             <DropdownMenuItem key={col.id} onClick={() => handleMoveTask(col.id)}>
-                                Move to "{col.title}"
+                                {col.title}
                             </DropdownMenuItem>
                             ))}
                         <DropdownMenuSeparator />
                         <DropdownMenuItem className="text-destructive" onClick={() => onDeleteTask(task.id)}>
-                            Delete Task
+                             <Trash2 className="mr-2 h-4 w-4" />
+                            Excluir Tarefa
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
@@ -245,7 +302,7 @@ const KanbanTaskCard: FC<{
         )}
         <Collapsible>
             {task.subtasks.length > 0 && <CollapsibleTrigger className="text-sm text-muted-foreground hover:text-foreground transition-colors w-full text-left mb-2">
-                Sub-tasks ({task.subtasks.length})
+                Subtarefas ({task.subtasks.length})
             </CollapsibleTrigger>}
             <CollapsibleContent>
                 <div className="space-y-1">
@@ -264,13 +321,13 @@ const KanbanTaskCard: FC<{
         <div className="mt-4 space-y-2">
             <div className="flex gap-2">
                 <Input 
-                    placeholder="Add a new subtask..."
+                    placeholder="Adicionar uma nova subtarefa..."
                     value={newSubtaskText}
                     onChange={e => setNewSubtaskText(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleAddSubtask()}
                     className="h-9"
                 />
-                <Button variant="secondary" onClick={handleAddSubtask} className="h-9">Add</Button>
+                <Button variant="secondary" onClick={handleAddSubtask} className="h-9">Adicionar</Button>
             </div>
         </div>
       </CardContent>
@@ -475,7 +532,7 @@ export default function KanbanPage() {
         <AppHeader onAddTask={handleAddTask} onRefresh={fetchTasks} isSyncing={isSyncing} />
         <div className="flex justify-center items-center flex-grow">
             <div className="text-center">
-                <p className="text-foreground mb-4">Loading tasks...</p>
+                <p className="text-foreground mb-4">Carregando tarefas...</p>
                 <RefreshCw className="h-6 w-6 text-primary animate-spin inline-block"/>
             </div>
         </div>

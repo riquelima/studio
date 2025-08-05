@@ -87,9 +87,9 @@ const initialTasks: Task[] = [
 ];
 
 const initialColumns: Column[] = [
-  { id: 'todo', title: 'To Do' },
-  { id: 'in-progress', title: 'In Progress' },
-  { id: 'done', title: 'Done' },
+  { id: 'todo', title: '📋 A fazer' },
+  { id: 'in-progress', title: '🚧 Em Progresso' },
+  { id: 'done', title: '✅ Concluído' },
 ];
 
 // --- SUB-COMPONENTS ---
@@ -398,8 +398,16 @@ export default function KanbanPage() {
 
   useEffect(() => {
     setIsClient(true);
-    setTasks(initialTasks);
+    const savedTasks = localStorage.getItem('kanban-tasks');
+    setTasks(savedTasks ? JSON.parse(savedTasks) : initialTasks);
   }, []);
+
+  useEffect(() => {
+    if (isClient) {
+        localStorage.setItem('kanban-tasks', JSON.stringify(tasks));
+    }
+  }, [tasks, isClient]);
+
 
   const handleAddTask = (title: string) => {
     const newTask: Task = {

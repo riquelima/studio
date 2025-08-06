@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, type FC, type DragEvent, useRef } from 'react';
@@ -168,15 +169,14 @@ const SubtaskItem: FC<{
                         className="h-8 text-sm"
                     />
                 ) : (
-                    <label
-                        htmlFor={subtask.id}
+                    <span
                         onDoubleClick={() => setIsEditing(true)}
-                        className={cn('text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 w-full', {
+                        className={cn('text-sm font-medium leading-none w-full cursor-pointer', {
                             'line-through text-muted-foreground': subtask.completed,
                         })}
                     >
                         {subtask.text}
-                    </label>
+                    </span>
                 )}
             </div>
             <Button variant="ghost" size="icon" className="h-7 w-7 opacity-50 hover:opacity-100 flex-shrink-0" onClick={onDelete}>

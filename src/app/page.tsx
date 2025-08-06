@@ -1,9 +1,9 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, type FC, type DragEvent, useRef } from 'react';
-import { GripVertical, Plus, MoreHorizontal, Trash2, RefreshCw, Pencil, Sparkles } from 'lucide-react';
-
+import { useState, useEffect, useMemo, type FC, type DragEvent, useRef, useCallback } from 'react';
+import { GripVertical, Plus, MoreHorizontal, Trash2, RefreshCw, Pencil } from 'lucide-react';
+ 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -30,7 +30,6 @@ import { cn } from '@/lib/utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
-import { suggestSubtasks } from '@/ai/flows/suggest-subtasks';
 
 
 // --- TYPES ---
@@ -478,16 +477,18 @@ export default function KanbanPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const { toast } = useToast();
 
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     setIsSyncing(true);
-    const { data: tasksData, error } = await supabase
+    const { data: tasksData, error: fetchError } = await supabase
       .from('tasks')
       .select('*, subtasks(*)')
       .order('created_at', { ascending: true });
-
-    if (error) {
-      console.error('Error fetching tasks:', error);
-      toast({ title: 'Error', description: 'Failed to load tasks.', variant: 'destructive' });
+  
+    if (fetchError) {
+      console.error('Error fetching tasks:', fetchError);
+      toast({ title: 'Error', description: 'Failed to load tasks.', variant: 'destructive' }); // Added toast for fetch error
+      setTasks([]); // Clear tasks on error
+    } else if (tasksData) {
       setTasks([]);
     } else {
       setTasks(tasksData as Task[]);
@@ -495,7 +496,7 @@ export default function KanbanPage() {
     setLoading(false);
     setIsSyncing(false);
   };
-
+  , [toast]);
   useEffect(() => {
     fetchTasks();
     
@@ -513,15 +514,15 @@ export default function KanbanPage() {
     return () => {
       supabase.removeChannel(channel);
     }
-  }, [toast]);
+  }, [fetchTasks]);
 
   const handleAddTask = async (title: string) => {
-    const { data, error } = await supabase
+    const { error } = await supabase // Removed 'data' since it was unused
       .from('tasks')
       .insert({ title, column_id: 'todo' })
       .select()
       .single();
-      
+
     if (error) {
       console.error('Error adding task:', error);
       toast({ title: 'Error', description: 'Failed to add task.', variant: 'destructive' });

@@ -488,14 +488,14 @@ export default function KanbanPage() {
       toast({ title: 'Error', description: 'Failed to load tasks.', variant: 'destructive' }); // Added toast for fetch error
       setTasks([]); // Clear tasks on error
     } else if (tasksData) {
-      setTasks([]);
-    } else {
       setTasks(tasksData as Task[]);
+    } else {
+      setTasks([]);
     }
     setLoading(false);
     setIsSyncing(false);
-  };
-  , [toast]);
+  }, [toast]);
+
   useEffect(() => {
     fetchTasks();
     
@@ -592,6 +592,12 @@ export default function KanbanPage() {
       }
 
       const task = tasksData as Task;
+
+      if(task.column_id === 'todo' && task.subtasks.some(s => s.completed)) {
+          handleUpdateTask(taskId, { column_id: 'in-progress' });
+          return; // Early return to prevent other checks
+      }
+      
       const allSubtasksCompleted = task.subtasks.length > 0 && task.subtasks.every(s => s.completed);
 
       if (allSubtasksCompleted) {

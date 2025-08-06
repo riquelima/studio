@@ -169,14 +169,15 @@ const SubtaskItem: FC<{
                         className="h-8 text-sm bg-transparent"
                     />
                 ) : (
-                    <span
+                    <label
+                        htmlFor={`subtask-checkbox-${subtask.id}`}
                         onDoubleClick={() => setIsEditing(true)}
                         className={cn('text-sm font-medium leading-none w-full cursor-pointer', {
                             'line-through text-muted-foreground': subtask.completed,
                         })}
                     >
                         {subtask.text}
-                    </span>
+                    </label>
                 )}
             </div>
              <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-50 hover:!opacity-100 flex-shrink-0" onClick={onDelete}>
@@ -577,8 +578,6 @@ export default function KanbanPage() {
           return;
       }
       
-      // We need to wait for the state to update, so we refetch tasks to check task state.
-      // This is not the most performant way, but it's reliable for this architecture.
       const { data: tasksData, error: fetchError } = await supabase
           .from('tasks')
           .select('*, subtasks(*)')
@@ -592,11 +591,14 @@ export default function KanbanPage() {
 
       const task = tasksData as Task;
       const allSubtasksCompleted = task.subtasks.length > 0 && task.subtasks.every(s => s.completed);
+      const anySubtaskCompleted = task.subtasks.some(s => s.completed);
 
       if (allSubtasksCompleted) {
           handleUpdateTask(taskId, { column_id: 'done' });
-      } else if (task.column_id === 'done') {
+      } else if (task.column_id === 'done' && !allSubtasksCompleted) {
            handleUpdateTask(taskId, { column_id: 'in-progress' });
+      } else if (task.column_id === 'todo' && anySubtaskCompleted) {
+          handleUpdateTask(taskId, { column_id: 'in-progress' });
       }
   };
 
@@ -662,3 +664,4 @@ export default function KanbanPage() {
     </div>
   );
 }
+

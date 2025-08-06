@@ -156,31 +156,30 @@ const SubtaskItem: FC<{
     }
 
     return (
-        <div className="flex items-center justify-between p-2 rounded-md hover:bg-white/5 transition-colors">
+        <div className="flex items-center justify-between p-2 rounded-md hover:bg-white/5 transition-colors group">
             <div className="flex items-center gap-3 flex-grow">
-                <Checkbox id={`subtask-${subtask.id}`} checked={subtask.completed} onCheckedChange={onToggle} />
-                {isEditing ? (
+                <Checkbox id={`subtask-checkbox-${subtask.id}`} checked={subtask.completed} onCheckedChange={onToggle} />
+                 {isEditing ? (
                     <Input 
                         ref={inputRef}
                         value={text}
                         onChange={e => setText(e.target.value)}
                         onBlur={handleUpdate}
                         onKeyDown={e => e.key === 'Enter' && handleUpdate()}
-                        className="h-8 text-sm"
+                        className="h-8 text-sm bg-transparent"
                     />
                 ) : (
-                    <Label
-                        htmlFor={`subtask-label-${subtask.id}`}
+                    <span
                         onDoubleClick={() => setIsEditing(true)}
                         className={cn('text-sm font-medium leading-none w-full cursor-pointer', {
                             'line-through text-muted-foreground': subtask.completed,
                         })}
                     >
                         {subtask.text}
-                    </Label>
+                    </span>
                 )}
             </div>
-            <Button variant="ghost" size="icon" className="h-7 w-7 opacity-50 hover:opacity-100 flex-shrink-0" onClick={onDelete}>
+             <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-50 hover:!opacity-100 flex-shrink-0" onClick={onDelete}>
                 <Trash2 className="h-4 w-4"/>
             </Button>
         </div>
@@ -578,27 +577,27 @@ export default function KanbanPage() {
           return;
       }
       
-      // If a subtask was marked as completed, check if all subtasks for the task are now complete.
-      if (updates.completed) {
-        // We need to wait for the state to update, so we refetch tasks.
-        const { data: tasksData, error: fetchError } = await supabase
-            .from('tasks')
-            .select('*, subtasks(*)')
-            .eq('id', taskId)
-            .single();
+      // We need to wait for the state to update, so we refetch tasks to check task state.
+      // This is not the most performant way, but it's reliable for this architecture.
+      const { data: tasksData, error: fetchError } = await supabase
+          .from('tasks')
+          .select('*, subtasks(*)')
+          .eq('id', taskId)
+          .single();
 
-        if (fetchError) {
-            console.error('Error refetching task for completion check:', fetchError);
-            return;
-        }
+      if (fetchError) {
+          console.error('Error refetching task for completion check:', fetchError);
+          return;
+      }
 
-        const task = tasksData as Task;
-        const allSubtasksCompleted = task.subtasks.length > 0 && task.subtasks.every(s => s.completed);
+      const task = tasksData as Task;
+      const allSubtasksCompleted = task.subtasks.length > 0 && task.subtasks.every(s => s.completed);
 
-        if (allSubtasksCompleted) {
-            handleUpdateTask(taskId, { column_id: 'done' });
-        }
-    }
+      if (allSubtasksCompleted) {
+          handleUpdateTask(taskId, { column_id: 'done' });
+      } else if (task.column_id === 'done') {
+           handleUpdateTask(taskId, { column_id: 'in-progress' });
+      }
   };
 
   const handleDeleteSubtask = async (subtaskId: string) => {

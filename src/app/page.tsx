@@ -158,7 +158,7 @@ const SubtaskItem: FC<{
     return (
         <div className="flex items-center justify-between p-2 rounded-md hover:bg-white/5 transition-colors">
             <div className="flex items-center gap-3 flex-grow">
-                <Checkbox id={subtask.id} checked={subtask.completed} onCheckedChange={onToggle} />
+                <Checkbox id={`subtask-${subtask.id}`} checked={subtask.completed} onCheckedChange={onToggle} />
                 {isEditing ? (
                     <Input 
                         ref={inputRef}
@@ -169,14 +169,15 @@ const SubtaskItem: FC<{
                         className="h-8 text-sm"
                     />
                 ) : (
-                    <span
+                    <Label
+                        htmlFor={`subtask-label-${subtask.id}`}
                         onDoubleClick={() => setIsEditing(true)}
                         className={cn('text-sm font-medium leading-none w-full cursor-pointer', {
                             'line-through text-muted-foreground': subtask.completed,
                         })}
                     >
                         {subtask.text}
-                    </span>
+                    </Label>
                 )}
             </div>
             <Button variant="ghost" size="icon" className="h-7 w-7 opacity-50 hover:opacity-100 flex-shrink-0" onClick={onDelete}>
@@ -247,7 +248,7 @@ const KanbanTaskCard: FC<{
   onUpdateTask: (taskId: string, updates: Partial<Task>) => void;
   onDeleteTask: (taskId: string) => void;
   onAddSubtask: (taskId: string, text: string) => void;
-  onUpdateSubtask: (subtaskId: string, updates: Partial<Subtask>) => void;
+  onUpdateSubtask: (taskId: string, subtaskId: string, updates: Partial<Subtask>) => void;
   onDeleteSubtask: (subtaskId: string) => void;
 }> = ({ task, columns, onUpdateTask, onDeleteTask, onAddSubtask, onUpdateSubtask, onDeleteSubtask }) => {
   const [newSubtaskText, setNewSubtaskText] = useState('');
@@ -270,7 +271,7 @@ const KanbanTaskCard: FC<{
   }
 
   const handleSubtaskToggle = (subtaskId: string, completed: boolean) => {
-    onUpdateSubtask(subtaskId, { completed: !completed });
+    onUpdateSubtask(task.id, subtaskId, { completed: !completed });
   };
   
   const handleSubtaskDelete = (subtaskId: string) => {
@@ -278,7 +279,7 @@ const KanbanTaskCard: FC<{
   };
 
   const handleSubtaskUpdateText = (subtaskId: string, newText: string) => {
-      onUpdateSubtask(subtaskId, { text: newText });
+      onUpdateSubtask(task.id, subtaskId, { text: newText });
   }
 
   const handleAddSubtask = () => {
@@ -418,7 +419,7 @@ const KanbanColumn: FC<{
   onUpdateTask: (taskId: string, updates: Partial<Task>) => void;
   onDeleteTask: (taskId: string) => void;
   onAddSubtask: (taskId: string, text: string) => void;
-  onUpdateSubtask: (subtaskId: string, updates: Partial<Subtask>) => void;
+  onUpdateSubtask: (taskId: string, subtaskId: string, updates: Partial<Subtask>) => void;
   onDeleteSubtask: (subtaskId: string) => void;
   onDropTask: (e: DragEvent<HTMLDivElement>, columnId: ColumnId) => void;
 }> = ({ column, tasks, allColumns, onUpdateTask, onDeleteTask, onAddSubtask, onUpdateSubtask, onDeleteSubtask, onDropTask }) => {
@@ -565,15 +566,38 @@ export default function KanbanPage() {
     }
   }
 
-  const handleUpdateSubtask = async (subtaskId: string, updates: Partial<Subtask>) => {
-    const { error } = await supabase
-        .from('subtasks')
-        .update(updates)
-        .eq('id', subtaskId);
+  const handleUpdateSubtask = async (taskId: string, subtaskId: string, updates: Partial<Subtask>) => {
+      const { error } = await supabase
+          .from('subtasks')
+          .update(updates)
+          .eq('id', subtaskId);
 
-    if (error) {
-        console.error('Error updating subtask:', error);
-        toast({ title: 'Error', description: 'Failed to update subtask.', variant: 'destructive' });
+      if (error) {
+          console.error('Error updating subtask:', error);
+          toast({ title: 'Error', description: 'Failed to update subtask.', variant: 'destructive' });
+          return;
+      }
+      
+      // If a subtask was marked as completed, check if all subtasks for the task are now complete.
+      if (updates.completed) {
+        // We need to wait for the state to update, so we refetch tasks.
+        const { data: tasksData, error: fetchError } = await supabase
+            .from('tasks')
+            .select('*, subtasks(*)')
+            .eq('id', taskId)
+            .single();
+
+        if (fetchError) {
+            console.error('Error refetching task for completion check:', fetchError);
+            return;
+        }
+
+        const task = tasksData as Task;
+        const allSubtasksCompleted = task.subtasks.length > 0 && task.subtasks.every(s => s.completed);
+
+        if (allSubtasksCompleted) {
+            handleUpdateTask(taskId, { column_id: 'done' });
+        }
     }
   };
 
@@ -639,5 +663,3 @@ export default function KanbanPage() {
     </div>
   );
 }
-
-    

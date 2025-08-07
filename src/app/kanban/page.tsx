@@ -44,11 +44,18 @@ type Subtask = {
   task_id: string;
 };
 
+type User = {
+    id: string;
+    username: string;
+    role: string;
+};
+
 type Task = {
   id: string;
   title: string;
   column_id: ColumnId;
   subtasks: Subtask[];
+  user_id: string;
 };
 
 type Column = {
@@ -66,7 +73,7 @@ const initialColumns: Column[] = [
 
 const AppHeader: FC<{ onAddTask: (title: string) => Promise<void>; onRefresh: () => void; isSyncing: boolean }> = ({ onAddTask, onRefresh, isSyncing }) => {
     const router = useRouter();
-    const [user, setUser] = useState<{username: string} | null>(null);
+    const [user, setUser] = useState<User | null>(null);
 
     useEffect(() => {
         const storedUser = sessionStorage.getItem('user');
@@ -95,7 +102,7 @@ const AppHeader: FC<{ onAddTask: (title: string) => Promise<void>; onRefresh: ()
                     <RefreshCw className={cn('h-4 w-4', { 'animate-spin': isSyncing })} />
                 </Button>
                 <CreateTaskDialog onAddTask={onAddTask} />
-                {user?.username === 'admin' && (
+                {user?.role === 'admin' && (
                     <Button variant="outline" size="icon" onClick={handleManageUsers}>
                         <Settings className="h-4 w-4" />
                     </Button>
@@ -555,59 +562,71 @@ export default function KanbanPage() {
   const [columns] = useState<Column[]>(initialColumns);
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
   const { toast } = useToast();
   const router = useRouter();
 
   useEffect(() => {
-    const user = sessionStorage.getItem('user');
-    if (!user) {
+    const storedUser = sessionStorage.getItem('user');
+    if (!storedUser) {
       router.replace('/login');
+      return;
     }
+    const parsedUser = JSON.parse(storedUser);
+    setUser(parsedUser);
   }, [router]);
 
   const fetchTasks = useCallback(async () => {
-    setIsSyncing(true);
-    const { data: tasksData, error: fetchError } = await supabase
-      .from('tasks')
-      .select('*, subtasks(*)')
-      .order('created_at', { ascending: true });
-  
-    if (fetchError) {
-      console.error('Error fetching tasks:', fetchError);
-      toast({ title: 'Error', description: 'Failed to load tasks.', variant: 'destructive' });
-      setTasks([]);
-    } else if (tasksData) {
-      setTasks(tasksData.map(t => ({...t, subtasks: t.subtasks || []})) as Task[]);
-    } else {
-      setTasks([]);
-    }
-    setLoading(false);
-    setIsSyncing(false);
-  }, [toast]);
+      if (!user) return;
+      
+      setIsSyncing(true);
+      const { data: tasksData, error: fetchError } = await supabase
+        .from('tasks')
+        .select('*, subtasks(*)')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
+    
+      if (fetchError) {
+        console.error('Error fetching tasks:', fetchError);
+        toast({ title: 'Error', description: 'Failed to load tasks.', variant: 'destructive' });
+        setTasks([]);
+      } else if (tasksData) {
+        setTasks(tasksData.map(t => ({...t, subtasks: t.subtasks || []})) as Task[]);
+      } else {
+        setTasks([]);
+      }
+      setLoading(false);
+      setIsSyncing(false);
+  }, [toast, user]);
 
   useEffect(() => {
-    fetchTasks();
-    
-    const channel = supabase.channel('realtime-tasks')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
-          console.log('Task change received!', payload);
-          fetchTasks();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'subtasks' }, (payload) => {
-          console.log('Subtask change received!', payload);
-          fetchTasks();
-      })
-      .subscribe();
+      if(user){
+        fetchTasks();
+        
+        const channel = supabase.channel(`realtime-tasks-${user.id}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${user.id}` }, (payload) => {
+              console.log('Task change received!', payload);
+              fetchTasks();
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'subtasks' }, (payload) => {
+              // This is less efficient, but required since we can't filter subtasks by user_id directly
+              console.log('Subtask change received!', payload);
+              fetchTasks();
+          })
+          .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    }
-  }, [fetchTasks]);
+        return () => {
+          supabase.removeChannel(channel);
+        }
+      }
+  }, [fetchTasks, user]);
 
   const handleAddTask = async (title: string) => {
+    if(!user) return;
+
     const { data, error } = await supabase
       .from('tasks')
-      .insert({ title, column_id: 'todo' })
+      .insert({ title, column_id: 'todo', user_id: user.id })
       .select()
       .single();
 
@@ -762,7 +781,7 @@ export default function KanbanPage() {
     [tasks]
   );
 
-  if (loading) {
+  if (loading || !user) {
     return (
       <div className="flex flex-col h-screen bg-background">
         <AppHeader onAddTask={handleAddTask} onRefresh={fetchTasks} isSyncing={isSyncing} />

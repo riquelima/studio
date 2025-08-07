@@ -42,7 +42,7 @@ export default function LoginPage() {
             toast({ title: 'Sucesso!', description: 'Login realizado com sucesso.' });
             
             // Store user session
-            sessionStorage.setItem('user', JSON.stringify({ username: user.username, role: user.role }));
+            sessionStorage.setItem('user', JSON.stringify({ id: user.id, username: user.username, role: user.role }));
             
             router.push('/kanban');
         } else {

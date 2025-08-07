@@ -154,10 +154,20 @@ const SubtaskItem: FC<{
         setIsEditing(false);
     }
 
+    const handleCheckboxClick = (e: React.MouseEvent) => {
+      e.stopPropagation(); // Prevent the click from bubbling up to the div
+      onToggle();
+    };
+
     return (
         <div className="flex items-center justify-between p-2 rounded-md hover:bg-white/5 transition-colors group">
             <div className="flex items-center gap-3 flex-grow">
-                <Checkbox id={`subtask-checkbox-${subtask.id}`} checked={subtask.completed} onCheckedChange={onToggle} />
+                <Checkbox 
+                  id={`subtask-checkbox-${subtask.id}`} 
+                  checked={subtask.completed} 
+                  onClick={handleCheckboxClick} 
+                  aria-label={`Marcar subtarefa ${subtask.text} como ${subtask.completed ? 'não concluída' : 'concluída'}`}
+                />
                  {isEditing ? (
                     <Input 
                         ref={inputRef}
@@ -168,14 +178,15 @@ const SubtaskItem: FC<{
                         className="h-8 text-sm bg-transparent"
                     />
                 ) : (
-                    <span
+                    <label
+                        htmlFor={`subtask-checkbox-${subtask.id}`}
                         onDoubleClick={() => setIsEditing(true)}
                         className={cn('text-sm font-medium leading-none w-full cursor-pointer', {
                             'line-through text-muted-foreground': subtask.completed,
                         })}
                     >
                         {subtask.text}
-                    </span>
+                    </label>
                 )}
             </div>
              <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-50 hover:!opacity-100 flex-shrink-0" onClick={onDelete}>
@@ -300,6 +311,14 @@ const KanbanTaskCard: FC<{
   const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
     e.dataTransfer.setData('taskId', task.id);
   }
+  
+  const sortedSubtasks = useMemo(() => {
+    return [...task.subtasks].sort((a, b) => {
+      if (a.completed === b.completed) return 0;
+      return a.completed ? 1 : -1;
+    });
+  }, [task.subtasks]);
+
 
   return (
     <Card 
@@ -379,7 +398,7 @@ const KanbanTaskCard: FC<{
             </CollapsibleTrigger>}
             <CollapsibleContent>
                 <div className="space-y-1">
-                {task.subtasks.map((subtask) => (
+                {sortedSubtasks.map((subtask) => (
                     <SubtaskItem
                         key={subtask.id}
                         subtask={subtask}
@@ -529,6 +548,13 @@ export default function KanbanPage() {
   };
 
   const handleUpdateTask = async (taskId: string, updates: Partial<Task>) => {
+    // Optimistic update
+    setTasks(prevTasks =>
+        prevTasks.map(task =>
+            task.id === taskId ? { ...task, ...updates } : task
+        )
+    );
+    
     const { error } = await supabase
       .from('tasks')
       .update(updates)
@@ -537,6 +563,8 @@ export default function KanbanPage() {
     if (error) {
       console.error('Error updating task:', error);
       toast({ title: 'Error', description: 'Failed to update task.', variant: 'destructive' });
+      // Revert on error
+      fetchTasks();
     }
   };
   
@@ -567,44 +595,60 @@ export default function KanbanPage() {
   }
 
   const handleUpdateSubtask = async (taskId: string, subtaskId: string, updates: Partial<Subtask>) => {
-      const { error } = await supabase
-          .from('subtasks')
-          .update(updates)
-          .eq('id', subtaskId);
+    // --- Start optimistic update ---
+    let originalTask: Task | undefined;
+    let updatedTask: Task | undefined;
 
-      if (error) {
-          console.error('Error updating subtask:', error);
-          toast({ title: 'Error', description: 'Failed to update subtask.', variant: 'destructive' });
-          return;
-      }
-      
-      // We need to wait for the state to update, so we refetch tasks to check task state.
-      // This is not the most performant way, but it's reliable for this architecture.
-      const { data: tasksData, error: fetchError } = await supabase
-          .from('tasks')
-          .select('*, subtasks(*)')
-          .eq('id', taskId)
-          .single();
+    setTasks(prevTasks => {
+        return prevTasks.map(task => {
+            if (task.id === taskId) {
+                originalTask = { ...task, subtasks: [...task.subtasks] }; // Deep copy for revert
+                const newSubtasks = task.subtasks.map(subtask =>
+                    subtask.id === subtaskId ? { ...subtask, ...updates } : subtask
+                );
+                updatedTask = { ...task, subtasks: newSubtasks };
+                return updatedTask;
+            }
+            return task;
+        });
+    });
+    // --- End optimistic update ---
 
-      if (fetchError) {
-          console.error('Error refetching task for completion check:', fetchError);
-          return;
-      }
+    const { error } = await supabase
+        .from('subtasks')
+        .update(updates)
+        .eq('id', subtaskId);
 
-      const task = tasksData as Task;
+    if (error) {
+        console.error('Error updating subtask:', error);
+        toast({ title: 'Error', description: 'Failed to update subtask.', variant: 'destructive' });
+        // Revert on error
+        if(originalTask){
+            setTasks(prevTasks => prevTasks.map(t => t.id === taskId ? originalTask! : t));
+        }
+        return;
+    }
+    
+    // After successful subtask update, check if task column needs to be moved
+    if (updatedTask) {
+        let newColumnId: ColumnId | null = null;
+        const wasInTodo = originalTask?.column_id === 'todo';
+        const wasInDone = originalTask?.column_id === 'done';
+        const isAnySubtaskCompleted = updatedTask.subtasks.some(s => s.completed);
+        const areAllSubtasksCompleted = updatedTask.subtasks.length > 0 && updatedTask.subtasks.every(s => s.completed);
 
-      if(task.column_id === 'todo' && task.subtasks.some(s => s.completed)) {
-          handleUpdateTask(taskId, { column_id: 'in-progress' });
-          return; // Early return to prevent other checks
-      }
-      
-      const allSubtasksCompleted = task.subtasks.length > 0 && task.subtasks.every(s => s.completed);
+        if (wasInTodo && isAnySubtaskCompleted) {
+            newColumnId = 'in-progress';
+        } else if (areAllSubtasksCompleted) {
+            newColumnId = 'done';
+        } else if (wasInDone && !areAllSubtasksCompleted) {
+            newColumnId = 'in-progress';
+        }
 
-      if (allSubtasksCompleted) {
-          handleUpdateTask(taskId, { column_id: 'done' });
-      } else if (task.column_id === 'done') {
-           handleUpdateTask(taskId, { column_id: 'in-progress' });
-      }
+        if (newColumnId && newColumnId !== updatedTask.column_id) {
+            handleUpdateTask(taskId, { column_id: newColumnId });
+        }
+    }
   };
 
   const handleDeleteSubtask = async (subtaskId: string) => {

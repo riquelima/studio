@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -7,6 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/lib/supabase';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -15,24 +17,50 @@ export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     setLoading(true);
 
-    // Simple hardcoded authentication
-    if (username === 'admin' && password === '2391') {
-      toast({ title: 'Sucesso!', description: 'Login realizado com sucesso.' });
-      
-      // Store user session (in a real app, use a more secure method)
-      sessionStorage.setItem('user', JSON.stringify({ username }));
-      
-      router.push('/kanban');
-    } else {
-      toast({
-        title: 'Erro de Login',
-        description: 'Usuário ou senha inválidos.',
-        variant: 'destructive',
-      });
-      setLoading(false);
+    if (!username.trim() || !password.trim()) {
+        toast({ title: 'Erro de Login', description: 'Por favor, preencha usuário e senha.', variant: 'destructive' });
+        setLoading(false);
+        return;
+    }
+
+    try {
+        const { data: user, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('username', username.trim())
+            .single();
+
+        if (error && error.code !== 'PGRST116') { // PGRST116: "No rows found"
+            throw error;
+        }
+
+        // NOTE: This is an insecure password check. In a real app, you should hash passwords.
+        if (user && user.password_hash === password) {
+            toast({ title: 'Sucesso!', description: 'Login realizado com sucesso.' });
+            
+            // Store user session
+            sessionStorage.setItem('user', JSON.stringify({ username: user.username, role: user.role }));
+            
+            router.push('/kanban');
+        } else {
+            toast({
+                title: 'Erro de Login',
+                description: 'Usuário ou senha inválidos.',
+                variant: 'destructive',
+            });
+            setLoading(false);
+        }
+    } catch (err: any) {
+        console.error('Login error:', err);
+        toast({
+            title: 'Erro no Servidor',
+            description: 'Não foi possível conectar ao servidor. Tente novamente mais tarde.',
+            variant: 'destructive',
+        });
+        setLoading(false);
     }
   };
   

@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, type FC, type DragEvent, useRef, useCallback } from 'react';
-import { GripVertical, Plus, MoreHorizontal, Trash2, RefreshCw, Pencil, Settings, LogOut } from 'lucide-react';
+import { GripVertical, Plus, MoreHorizontal, Trash2, RefreshCw, Pencil, Settings, LogOut, Lightbulb } from 'lucide-react';
 import { useRouter } from 'next/navigation';
  
 import { Button } from '@/components/ui/button';
@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
+import { suggestSubtasks } from '@/ai/flows/suggest-subtasks';
 
 
 // --- TYPES ---
@@ -78,6 +79,10 @@ const AppHeader: FC<{ onAddTask: (title: string) => Promise<void>; onRefresh: ()
         sessionStorage.removeItem('user');
         router.push('/login');
     };
+    
+    const handleManageUsers = () => {
+        router.push('/admin/users');
+    }
 
     return (
         <header className="flex items-center justify-between p-4 border-b">
@@ -91,7 +96,7 @@ const AppHeader: FC<{ onAddTask: (title: string) => Promise<void>; onRefresh: ()
                 </Button>
                 <CreateTaskDialog onAddTask={onAddTask} />
                 {user?.username === 'admin' && (
-                    <Button variant="outline" size="icon" onClick={() => alert('Página de gerenciamento de usuários em construção!')}>
+                    <Button variant="outline" size="icon" onClick={handleManageUsers}>
                         <Settings className="h-4 w-4" />
                     </Button>
                 )}
@@ -292,7 +297,9 @@ const KanbanTaskCard: FC<{
   const [newSubtaskText, setNewSubtaskText] = useState('');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [title, setTitle] = useState(task.title);
+  const [isSuggesting, setIsSuggesting] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (isEditingTitle) {
@@ -326,6 +333,27 @@ const KanbanTaskCard: FC<{
         setNewSubtaskText('');
     }
   };
+
+  const handleSuggestSubtasks = useCallback(async () => {
+    setIsSuggesting(true);
+    try {
+      const result = await suggestSubtasks({ taskTitle: task.title });
+      if (result.subtasks && result.subtasks.length > 0) {
+        // Batch insert new subtasks
+        for (const subtaskText of result.subtasks) {
+          await onAddSubtask(task.id, subtaskText);
+        }
+        toast({ title: "Subtarefas sugeridas!", description: `${result.subtasks.length} novas subtarefas foram adicionadas.` });
+      } else {
+        toast({ title: "Nenhuma sugestão", description: "A IA não conseguiu gerar sugestões para esta tarefa.", variant: "destructive" });
+      }
+    } catch (error) {
+      console.error("Error suggesting subtasks:", error);
+      toast({ title: "Erro na Sugestão", description: "Não foi possível obter sugestões da IA.", variant: "destructive" });
+    } finally {
+      setIsSuggesting(false);
+    }
+  }, [task.id, task.title, onAddSubtask, toast]);
   
   const handleMoveTask = (newColumnId: ColumnId) => {
     onUpdateTask(task.id, { column_id: newColumnId });
@@ -390,6 +418,10 @@ const KanbanTaskCard: FC<{
                     <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Ações</DropdownMenuLabel>
                         <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={handleSuggestSubtasks} disabled={isSuggesting}>
+                            <Lightbulb className={cn("mr-2 h-4 w-4", { "animate-pulse": isSuggesting })} />
+                            Sugerir Subtarefas (IA)
+                        </DropdownMenuItem>
                         <EditTaskDialog task={task} onUpdateTask={onUpdateTask} />
                         <DropdownMenuLabel>Mover para</DropdownMenuLabel>
                         {columns
@@ -414,17 +446,18 @@ const KanbanTaskCard: FC<{
                 <div 
                   className={cn("h-1.5 rounded-full transition-all duration-500", {
                     "bg-green-500": completionPercentage === 100,
-                    "bg-yellow-500": completionPercentage > 0 && completionPercentage < 100,
-                    "bg-transparent": completionPercentage === 0,
+                    "bg-primary": completionPercentage > 0 && completionPercentage < 100,
                   })} 
                   style={{ width: `${completionPercentage}%` }} 
                 />
             </div>
         )}
         <Collapsible>
-            {task.subtasks.length > 0 && <CollapsibleTrigger className="text-sm text-muted-foreground hover:text-foreground transition-colors w-full text-left mb-2">
+            {task.subtasks.length > 0 && 
+              <CollapsibleTrigger className="text-sm text-muted-foreground hover:text-foreground transition-colors w-full text-left mb-2">
                 Subtarefas ({task.subtasks.length})
-            </CollapsibleTrigger>}
+              </CollapsibleTrigger>
+            }
             <CollapsibleContent>
                 <div className="space-y-1">
                 {sortedSubtasks.map((subtask) => (
@@ -541,10 +574,10 @@ export default function KanbanPage() {
   
     if (fetchError) {
       console.error('Error fetching tasks:', fetchError);
-      toast({ title: 'Error', description: 'Failed to load tasks.', variant: 'destructive' }); // Added toast for fetch error
-      setTasks([]); // Clear tasks on error
+      toast({ title: 'Error', description: 'Failed to load tasks.', variant: 'destructive' });
+      setTasks([]);
     } else if (tasksData) {
-      setTasks(tasksData as Task[]);
+      setTasks(tasksData.map(t => ({...t, subtasks: t.subtasks || []})) as Task[]);
     } else {
       setTasks([]);
     }
@@ -572,7 +605,7 @@ export default function KanbanPage() {
   }, [fetchTasks]);
 
   const handleAddTask = async (title: string) => {
-    const { error } = await supabase // Removed 'data' since it was unused
+    const { data, error } = await supabase
       .from('tasks')
       .insert({ title, column_id: 'todo' })
       .select()
@@ -581,6 +614,8 @@ export default function KanbanPage() {
     if (error) {
       console.error('Error adding task:', error);
       toast({ title: 'Error', description: 'Failed to add task.', variant: 'destructive' });
+    } else if (data) {
+        setTasks(prev => [...prev, {...data, subtasks: []} as Task]);
     }
   };
 
@@ -606,10 +641,12 @@ export default function KanbanPage() {
   };
   
   const handleDeleteTask = async (taskId: string) => {
+     setTasks(prev => prev.filter(t => t.id !== taskId));
      const { error } = await supabase.from('tasks').delete().eq('id', taskId);
      if (error) {
       console.error('Error deleting task:', error);
       toast({ title: 'Error', description: 'Failed to delete task.', variant: 'destructive' });
+      fetchTasks();
     }
   };
   
@@ -621,25 +658,28 @@ export default function KanbanPage() {
   }
   
   const handleAddSubtask = async (taskId: string, text: string) => {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('subtasks')
-      .insert({ task_id: taskId, text, completed: false });
+      .insert({ task_id: taskId, text, completed: false })
+      .select()
+      .single();
 
     if (error) {
         console.error('Error adding subtask:', error);
         toast({ title: 'Error', description: 'Failed to add subtask.', variant: 'destructive' });
+    } else if (data) {
+        setTasks(prev => prev.map(t => t.id === taskId ? {...t, subtasks: [...t.subtasks, data]} : t));
     }
   }
 
   const handleUpdateSubtask = async (taskId: string, subtaskId: string, updates: Partial<Subtask>) => {
-    // --- Start optimistic update ---
     let originalTask: Task | undefined;
     let updatedTask: Task | undefined;
 
     setTasks(prevTasks => {
         return prevTasks.map(task => {
             if (task.id === taskId) {
-                originalTask = { ...task, subtasks: [...task.subtasks] }; // Deep copy for revert
+                originalTask = JSON.parse(JSON.stringify(task)); // Deep copy for revert
                 const newSubtasks = task.subtasks.map(subtask =>
                     subtask.id === subtaskId ? { ...subtask, ...updates } : subtask
                 );
@@ -649,7 +689,6 @@ export default function KanbanPage() {
             return task;
         });
     });
-    // --- End optimistic update ---
 
     const { error } = await supabase
         .from('subtasks')
@@ -659,7 +698,6 @@ export default function KanbanPage() {
     if (error) {
         console.error('Error updating subtask:', error);
         toast({ title: 'Error', description: 'Failed to update subtask.', variant: 'destructive' });
-        // Revert on error
         if(originalTask){
             setTasks(prevTasks => prevTasks.map(t => t.id === taskId ? originalTask! : t));
         }
@@ -667,16 +705,17 @@ export default function KanbanPage() {
     }
     
     // After successful subtask update, check if task column needs to be moved
-    if (updatedTask) {
+    if (updatedTask && originalTask) {
         let newColumnId: ColumnId | null = null;
-        const wasInTodo = originalTask?.column_id === 'todo';
-        const wasInDone = originalTask?.column_id === 'done';
+        const wasInTodo = originalTask.column_id === 'todo';
+        const wasInDone = originalTask.column_id === 'done';
+        
         const isAnySubtaskCompleted = updatedTask.subtasks.some(s => s.completed);
         const areAllSubtasksCompleted = updatedTask.subtasks.length > 0 && updatedTask.subtasks.every(s => s.completed);
 
         if (wasInTodo && isAnySubtaskCompleted) {
             newColumnId = 'in-progress';
-        } else if (areAllSubtasksCompleted) {
+        } else if (!wasInDone && areAllSubtasksCompleted) {
             newColumnId = 'done';
         } else if (wasInDone && !areAllSubtasksCompleted) {
             newColumnId = 'in-progress';
@@ -689,6 +728,16 @@ export default function KanbanPage() {
   };
 
   const handleDeleteSubtask = async (subtaskId: string) => {
+    let taskId: string | null = null;
+    setTasks(prev => prev.map(t => {
+        const subtaskExists = t.subtasks.some(s => s.id === subtaskId);
+        if (subtaskExists) {
+            taskId = t.id;
+            return { ...t, subtasks: t.subtasks.filter(s => s.id !== subtaskId) };
+        }
+        return t;
+    }));
+
     const { error } = await supabase
         .from('subtasks')
         .delete()
@@ -697,6 +746,7 @@ export default function KanbanPage() {
     if (error) {
         console.error('Error deleting subtask:', error);
         toast({ title: 'Error', description: 'Failed to delete subtask.', variant: 'destructive' });
+        if (taskId) fetchTasks(); // Re-fetch all on error to be safe
     }
   }
 
@@ -750,4 +800,3 @@ export default function KanbanPage() {
     </div>
   );
 }
-

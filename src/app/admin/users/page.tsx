@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, UserPlus, RefreshCw } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 type User = {
     id: string;
@@ -176,4 +177,3 @@ export default function AdminUsersPage() {
         </div>
     );
 }
-

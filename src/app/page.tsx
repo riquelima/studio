@@ -63,15 +63,18 @@ const initialColumns: Column[] = [
 // --- SUB-COMPONENTS ---
 
 const AppHeader: FC<{ onAddTask: (title: string) => Promise<void>; onRefresh: () => void; isSyncing: boolean }> = ({ onAddTask, onRefresh, isSyncing }) => (
-  <header className="flex items-center justify-between p-4 border-b">
-    <h1 className="text-2xl font-bold text-foreground">Banco de Tarefas</h1>
-    <div className="flex items-center gap-2">
-      <Button onClick={onRefresh} variant="outline" size="icon" disabled={isSyncing}>
-          <RefreshCw className={cn('h-4 w-4', { 'animate-spin': isSyncing })} />
-      </Button>
-      <CreateTaskDialog onAddTask={onAddTask} />
-    </div>
-  </header>
+    <header className="flex items-center justify-between p-4 border-b">
+        <div className="flex items-center gap-3">
+            <img src="https://cdn-icons-png.flaticon.com/512/3475/3475845.png" alt="Ícone de Tarefas" className="w-8 h-8 transition-transform duration-500 ease-in-out hover:rotate-[20deg]" />
+            <h1 className="text-2xl font-bold text-foreground">Banco de Tarefas</h1>
+        </div>
+        <div className="flex items-center gap-2">
+            <Button onClick={onRefresh} variant="outline" size="icon" disabled={isSyncing}>
+                <RefreshCw className={cn('h-4 w-4', { 'animate-spin': isSyncing })} />
+            </Button>
+            <CreateTaskDialog onAddTask={onAddTask} />
+        </div>
+    </header>
 );
 
 const CreateTaskDialog: FC<{ onAddTask: (title: string) => Promise<void> }> = ({ onAddTask }) => {
@@ -179,7 +182,7 @@ const SubtaskItem: FC<{
                     />
                 ) : (
                     <label
-                        htmlFor={`subtask-checkbox-${subtask.id}`}
+                        htmlFor={`subtask-label-${subtask.id}`}
                         onDoubleClick={() => setIsEditing(true)}
                         className={cn('text-sm font-medium leading-none w-full cursor-pointer', {
                             'line-through text-muted-foreground': subtask.completed,

@@ -27,14 +27,15 @@ export default function LoginPage() {
     }
 
     try {
-        // Step 1: Sign in with Supabase Auth
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-            // We use a dummy email domain as Supabase Auth requires an email.
-            email: `${username.trim()}@bancodetarefas.com`,
-            password: password,
-        });
-
-        if (authError) {
+        // Query the public 'users' table directly
+        const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('id, username, role, password_hash')
+            .eq('username', username.trim())
+            .single();
+        
+        if (userError || !userData) {
+            console.error("Login failed. User not found:", userError?.message);
             toast({
                 title: 'Erro de Login',
                 description: 'Usuário ou senha inválidos.',
@@ -44,35 +45,25 @@ export default function LoginPage() {
             return;
         }
 
-        if (!authData.user) {
-             throw new Error("Falha na autenticação, usuário não encontrado.");
-        }
-        
-        // Step 2: Get user details (like role and username) from the public 'users' table
-        const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('id, username, role')
-            .eq('id', authData.user.id)
-            .single();
-        
-        if (userError || !userData) {
-            // This case is unlikely if user creation is handled correctly, but it's good practice to check.
-            console.error("Auth successful, but failed to fetch user data from public table.", userError);
+        // Plain text password comparison, as requested
+        const passwordMatch = userData.password_hash === password;
+
+        if (!passwordMatch) {
             toast({
                 title: 'Erro de Login',
-                description: 'Não foi possível carregar os dados do perfil do usuário.',
+                description: 'Usuário ou senha inválidos.',
                 variant: 'destructive',
             });
-            // Log the user out to be safe
-            await supabase.auth.signOut();
             setLoading(false);
             return;
         }
 
-
+        // On successful login
         toast({ title: 'Sucesso!', description: 'Login realizado com sucesso.' });
+        
         // Store user info in session storage to use across the app
         sessionStorage.setItem('user', JSON.stringify({ id: userData.id, username: userData.username, role: userData.role }));
+        
         router.push('/kanban');
 
     } catch (err: any) {

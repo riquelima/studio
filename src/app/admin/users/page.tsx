@@ -64,41 +64,27 @@ export default function AdminUsersPage() {
         setIsSubmitting(true);
         
         try {
-            // 1. Create user in Supabase Auth
-            const { data: authData, error: authError } = await supabase.auth.signUp({
-                // We use a dummy email domain, as Supabase Auth requires an email.
-                email: `${newUsername.trim()}@bancodetarefas.com`,
-                password: newPassword,
-            });
+            // Check if user already exists
+            const { data: existingUser, error: existingUserError } = await supabase
+                .from('users')
+                .select('username')
+                .eq('username', newUsername.trim())
+                .single();
 
-            if (authError) {
-                // Handle specific errors, like user already exists
-                if (authError.message.includes('User already registered')) {
-                    toast({ title: 'Erro ao criar usuário', description: `O nome de usuário '${newUsername.trim()}' já existe.`, variant: 'destructive' });
-                } else {
-                    throw authError;
-                }
+            if (existingUser) {
+                toast({ title: 'Erro ao criar usuário', description: `O nome de usuário '${newUsername.trim()}' já existe.`, variant: 'destructive' });
                 setIsSubmitting(false);
                 return;
             }
-
-            if (!authData.user) {
-                throw new Error("Falha ao criar o usuário na autenticação.");
-            }
             
-            // 2. Insert user data into our public 'users' table
+            // Insert user data into our public 'users' table
             const { error: insertError } = await supabase.from('users').insert({
-                id: authData.user.id, // Use the ID from the auth user
                 username: newUsername.trim(),
-                // The 'admin' user is a special case set manually or via a secure backend process.
-                // For this panel, we'll default to 'user'.
+                password_hash: newPassword, // Storing password in plain text as requested
                 role: newUsername.trim().toLowerCase() === 'admin' ? 'admin' : 'user'
             });
 
             if (insertError) {
-                // If this fails, we should ideally delete the user from auth to keep things clean.
-                // This is a more advanced transactional logic. For now, we'll just show the error.
-                 console.error("Error inserting into 'users' table, but auth user was created:", authData.user.id);
                  throw insertError;
             }
 
@@ -178,7 +164,7 @@ export default function AdminUsersPage() {
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2"><UserPlus size={20}/> Adicionar Novo Usuário</CardTitle>
-                            <CardDescription>Crie uma nova conta de usuário. Isto irá criar um usuário no sistema de autenticação e na tabela de usuários.</CardDescription>
+                            <CardDescription>Crie uma nova conta de usuário. A senha será armazenada como texto simples.</CardDescription>
                         </CardHeader>
                         <CardContent className="grid gap-4">
                             <div className="grid gap-2">

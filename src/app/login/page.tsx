@@ -72,7 +72,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex flex-col h-screen w-full items-center justify-center bg-background p-4">
-      <img src="https://cdn-icons-png.flaticon.com/512/3475/3475845.png" alt="Logo Banco de Tarefas" className="w-24 h-24 mb-6" />
+      <img src="https://cdn-icons-png.flaticon.com/512/3475/3475845.png" alt="Logo Banco de Tarefas" className="w-32 h-32 mb-6" />
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-2xl">Login</CardTitle>

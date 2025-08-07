@@ -27,24 +27,40 @@ export default function LoginPage() {
     }
 
     try {
-        const { data: user, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('username', username.trim())
-            .single();
-
-        if (error && error.code !== 'PGRST116') { // PGRST116: "No rows found"
-            throw error;
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+            email: `${username.trim()}@bancodetarefas.com`,
+            password: password,
+        });
+        
+        if (signInError) {
+             toast({
+                title: 'Erro de Login',
+                description: 'Usuário ou senha inválidos.',
+                variant: 'destructive',
+            });
+            setLoading(false);
+            return;
         }
 
-        // NOTE: This is an insecure password check. In a real app, you should hash passwords.
-        if (user && user.password_hash === password) {
-            toast({ title: 'Sucesso!', description: 'Login realizado com sucesso.' });
+        const { data: { user } } = await supabase.auth.getUser();
+
+        if(user){
+            const { data: userData, error: userError } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', user.id)
+                .single();
             
-            // Store user session
-            sessionStorage.setItem('user', JSON.stringify({ id: user.id, username: user.username, role: user.role }));
-            
-            router.push('/kanban');
+            if (userError) throw userError;
+
+             if (userData) {
+                toast({ title: 'Sucesso!', description: 'Login realizado com sucesso.' });
+                sessionStorage.setItem('user', JSON.stringify({ id: userData.id, username: userData.username, role: userData.role }));
+                router.push('/kanban');
+            } else {
+                 throw new Error("Usuário não encontrado na tabela 'users'.");
+            }
+
         } else {
             toast({
                 title: 'Erro de Login',
@@ -75,7 +91,7 @@ export default function LoginPage() {
       <img src="https://cdn-icons-png.flaticon.com/512/3475/3475845.png" alt="Logo Banco de Tarefas" className="w-32 h-32 mb-6" />
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Login</CardTitle>
+          <CardTitle className="text-2xl">Banco de Tarefas</CardTitle>
           <CardDescription>
             Entre com suas credenciais
           </CardDescription>

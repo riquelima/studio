@@ -27,6 +27,8 @@ export default function LoginPage() {
     }
 
     try {
+        // We will use a dummy email domain since Supabase Auth requires an email.
+        // This is transparent to the user who still logs in with their username.
         const { error: signInError } = await supabase.auth.signInWithPassword({
             email: `${username.trim()}@bancodetarefas.com`,
             password: password,
@@ -42,6 +44,7 @@ export default function LoginPage() {
             return;
         }
 
+        // If signIn is successful, get user details from our 'users' table
         const { data: { user } } = await supabase.auth.getUser();
 
         if(user){
@@ -55,6 +58,7 @@ export default function LoginPage() {
 
              if (userData) {
                 toast({ title: 'Sucesso!', description: 'Login realizado com sucesso.' });
+                // Store user info in session storage to use across the app
                 sessionStorage.setItem('user', JSON.stringify({ id: userData.id, username: userData.username, role: userData.role }));
                 router.push('/kanban');
             } else {
@@ -62,6 +66,7 @@ export default function LoginPage() {
             }
 
         } else {
+            // This case should ideally not be reached if signInError is handled
             toast({
                 title: 'Erro de Login',
                 description: 'Usuário ou senha inválidos.',

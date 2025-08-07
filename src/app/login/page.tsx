@@ -27,16 +27,15 @@ export default function LoginPage() {
     }
 
     try {
-        // Temporarily revert to insecure direct table check to allow admin to login and fix users
-        const { data, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('username', username.trim())
-            .eq('password_hash', password) // THIS IS INSECURE
-            .single();
+        // Step 1: Sign in with Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+            // We use a dummy email domain as Supabase Auth requires an email.
+            email: `${username.trim()}@bancodetarefas.com`,
+            password: password,
+        });
 
-        if (error || !data) {
-             toast({
+        if (authError) {
+            toast({
                 title: 'Erro de Login',
                 description: 'Usuário ou senha inválidos.',
                 variant: 'destructive',
@@ -45,18 +44,45 @@ export default function LoginPage() {
             return;
         }
 
+        if (!authData.user) {
+             throw new Error("Falha na autenticação, usuário não encontrado.");
+        }
+        
+        // Step 2: Get user details (like role and username) from the public 'users' table
+        const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('id, username, role')
+            .eq('id', authData.user.id)
+            .single();
+        
+        if (userError || !userData) {
+            // This case is unlikely if user creation is handled correctly, but it's good practice to check.
+            console.error("Auth successful, but failed to fetch user data from public table.", userError);
+            toast({
+                title: 'Erro de Login',
+                description: 'Não foi possível carregar os dados do perfil do usuário.',
+                variant: 'destructive',
+            });
+            // Log the user out to be safe
+            await supabase.auth.signOut();
+            setLoading(false);
+            return;
+        }
+
+
         toast({ title: 'Sucesso!', description: 'Login realizado com sucesso.' });
         // Store user info in session storage to use across the app
-        sessionStorage.setItem('user', JSON.stringify({ id: data.id, username: data.username, role: data.role }));
+        sessionStorage.setItem('user', JSON.stringify({ id: userData.id, username: userData.username, role: userData.role }));
         router.push('/kanban');
 
     } catch (err: any) {
         console.error('Login error:', err);
         toast({
             title: 'Erro no Servidor',
-            description: 'Não foi possível conectar ao servidor. Tente novamente mais tarde.',
+            description: err.message || 'Não foi possível conectar ao servidor. Tente novamente mais tarde.',
             variant: 'destructive',
         });
+    } finally {
         setLoading(false);
     }
   };

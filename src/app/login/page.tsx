@@ -77,7 +77,7 @@ export default function LoginPage() {
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">Login</CardTitle>
           <CardDescription>
-            Entre com suas credenciais para acessar o Banco de Tarefas.
+            Entre com suas credenciais
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">

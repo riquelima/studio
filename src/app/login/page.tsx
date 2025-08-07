@@ -1,0 +1,88 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/hooks/use-toast';
+
+export default function LoginPage() {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const { toast } = useToast();
+
+  const handleLogin = () => {
+    setLoading(true);
+
+    // Simple hardcoded authentication
+    if (username === 'admin' && password === '2391') {
+      toast({ title: 'Sucesso!', description: 'Login realizado com sucesso.' });
+      
+      // Store user session (in a real app, use a more secure method)
+      sessionStorage.setItem('user', JSON.stringify({ username }));
+      
+      router.push('/kanban');
+    } else {
+      toast({
+        title: 'Erro de Login',
+        description: 'Usuário ou senha inválidos.',
+        variant: 'destructive',
+      });
+      setLoading(false);
+    }
+  };
+  
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleLogin();
+    }
+  }
+
+  return (
+    <div className="flex h-screen w-full items-center justify-center bg-background">
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle className="text-2xl">Login</CardTitle>
+          <CardDescription>
+            Entre com suas credenciais para acessar o Banco de Tarefas.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="grid gap-2">
+            <Label htmlFor="username">Usuário</Label>
+            <Input
+              id="username"
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              onKeyDown={handleKeyDown}
+              required
+              disabled={loading}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="password">Senha</Label>
+            <Input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={handleKeyDown}
+              required
+              disabled={loading}
+            />
+          </div>
+        </CardContent>
+        <CardFooter>
+          <Button className="w-full" onClick={handleLogin} disabled={loading}>
+            {loading ? 'Entrando...' : 'Entrar'}
+          </Button>
+        </CardFooter>
+      </Card>
+    </div>
+  );
+}
